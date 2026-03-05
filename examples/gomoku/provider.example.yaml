@@ -1,0 +1,31 @@
+# Provider Configuration
+# Copy and customize. Create multiple configs for different providers.
+# The GUI will auto-discover all *.yaml / *.json files in this directory.
+
+# Provider type: "mock" or "openai"
+provider: openai
+
+# Mock AI style (only used when provider=mock): "aggressive", "defensive", "balanced"
+style: balanced
+
+# OpenAI-compatible API settings (also: OPENAI_API_KEY / OPENAI_BASE_URL env vars)
+api_key: sk-your-key-here
+base_url: https://api.openai.com/v1
+model: gpt-4o
+temperature: 0.3
+
+# Response format: "json" for JSON mode, "text" for plain text
+response_format: json
+
+# Conversation history limit (each turn = 1 observe + 1 act)
+max_history_turns: 20
+
+# Prompt customization
+system_prompt_prefix: ""
+system_prompt_suffix: ""
+strategy_prompt: |
+  Think carefully about strategy:
+  1. Check if you can win immediately (4 in a row with open end)
+  2. Check if opponent has a threat you must block
+  3. Try to build multiple threats simultaneously
+  4. Prefer center and positions near existing stones

@@ -1,0 +1,12 @@
+[project]
+name = "gomoku"
+version = "0.1.0"
+description = "UAP protocol example: Gomoku (five-in-a-row) game"
+requires-python = ">=3.11"
+dependencies = [
+    "openai>=2.24.0",
+    "pygame>=2.6.1",
+]
+
+[project.scripts]
+gomoku = "server:main"

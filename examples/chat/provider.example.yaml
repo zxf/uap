@@ -1,0 +1,17 @@
+# Chat Provider Configuration
+# Copy and customize, e.g.: cp provider.example.yaml openai.yaml
+
+# Provider type: "mock" or "openai"
+provider: openai
+
+# OpenAI-compatible API settings (also: OPENAI_API_KEY / OPENAI_BASE_URL env vars)
+api_key: sk-your-key-here
+base_url: https://api.openai.com/v1
+model: gpt-4o
+temperature: 0.7
+
+# Conversation history limit (each turn = 1 user + 1 assistant message)
+max_history_turns: 50
+
+# System prompt
+system_prompt: "You are a helpful, friendly AI assistant."

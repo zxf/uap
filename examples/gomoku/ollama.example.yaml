@@ -1,0 +1,14 @@
+# Ollama Provider Configuration
+# Copy and customize: cp ollama.example.yaml ollama.yaml
+#
+# Ollama exposes an OpenAI-compatible API, so provider type is "openai".
+# Install Ollama: https://ollama.com
+# Pull a model: ollama pull qwen2.5:7b
+
+provider: openai
+base_url: http://localhost:11434/v1
+api_key: ollama
+model: qwen2.5:7b
+temperature: 0.3
+max_history_turns: 10
+response_format: json
