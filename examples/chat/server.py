@@ -2,8 +2,8 @@
 UAP Chat Example - Terminal Client (Consumer)
 
 A simple chat client demonstrating the UAP protocol for conversational AI.
-Chat is just another environment: env.declare describes a conversation,
-env.observe sends user messages, env.act returns AI replies.
+Chat is just another system: session.init declares the system,
+input sends user messages, action returns AI replies.
 
 Usage:
     uv run server.py                       # Chat with Mock AI
@@ -24,72 +24,76 @@ from provider_openai import OpenAIChatProvider, ProviderConfig
 
 # --- UAP Message Builders ---
 
-def build_env_declare(env_id: str) -> dict:
-    """Build the env.declare message for a chat environment."""
+def build_session_init() -> dict:
+    """Build the session.init message with system declaration for chat."""
     return {
-        "uap": "0.2",
-        "id": "req_declare",
-        "method": "env.declare",
+        "uap": "0.3",
+        "id": "req_init",
+        "method": "session.init",
         "params": {
-            "env_id": env_id,
-            "name": "Chat",
-            "description": (
-                "A conversational chat environment. "
-                "You receive user messages and respond with helpful, clear replies. "
-                "You can use markdown formatting in your responses."
-            ),
-            "example": {
-                "inputs": {
-                    "message": {"role": "user", "text": "What is the capital of France?"},
+            "client": {
+                "name": "UAP Chat Example",
+                "version": "0.1.0",
+            },
+            "system": {
+                "name": "Chat",
+                "description": (
+                    "A conversational chat system. "
+                    "You receive user messages and respond with helpful, clear replies. "
+                    "You can use markdown formatting in your responses."
+                ),
+                "example": {
+                    "data": {
+                        "message": {"role": "user", "text": "What is the capital of France?"},
+                    },
+                    "actions": [
+                        {"id": "reply", "params": {"text": "The capital of France is **Paris**."}},
+                    ],
                 },
+                "inputs": [
+                    {
+                        "id": "message",
+                        "type": "structured",
+                        "description": "User message with role and text fields",
+                    },
+                ],
                 "actions": [
-                    {"id": "reply", "params": {"text": "The capital of France is **Paris**."}},
+                    {
+                        "id": "reply",
+                        "description": "Send a text reply to the user",
+                        "params_schema": {
+                            "type": "object",
+                            "properties": {
+                                "text": {"type": "string", "description": "Reply text"},
+                            },
+                            "required": ["text"],
+                        },
+                    },
                 ],
             },
-            "inputs": [
-                {
-                    "id": "message",
-                    "type": "structured",
-                    "description": "User message with role and text fields",
-                },
-            ],
-            "actions": [
-                {
-                    "id": "reply",
-                    "description": "Send a text reply to the user",
-                    "params_schema": {
-                        "type": "object",
-                        "properties": {
-                            "text": {"type": "string", "description": "Reply text"},
-                        },
-                        "required": ["text"],
-                    },
-                },
-            ],
         },
     }
 
 
-def build_env_observe(env_id: str, text: str, msg_id: int) -> dict:
+def build_input(text: str, msg_id: int) -> dict:
     return {
-        "uap": "0.2",
+        "uap": "0.3",
         "id": f"req_{msg_id:03d}",
-        "method": "env.observe",
+        "method": "input",
         "params": {
-            "env_id": env_id,
-            "inputs": {
+            "data": {
                 "message": {"role": "user", "text": text},
             },
         },
     }
 
 
-def build_env_close(env_id: str, reason: str) -> dict:
+def build_session_close(reason: str) -> dict:
     return {
-        "uap": "0.2",
+        "uap": "0.3",
         "id": "req_close",
-        "method": "env.close",
-        "params": {"env_id": env_id, "reason": reason},
+        "method": "session.close",
+        "params": {"reason": reason},
     }
 
 
@@ -108,13 +112,12 @@ def make_provider(name: str = "AI", config_file: str | None = None):
 # --- Chat Loop ---
 
 def chat(config_file: str | None = None):
-    env_id = "chat_01"
     provider = make_provider(name="AI", config_file=config_file)
 
-    # env.declare
-    declare_msg = build_env_declare(env_id)
-    print("[UAP] -> env.declare")
-    response = provider.handle_message(declare_msg)
+    # session.init (includes system declaration)
+    init_msg = build_session_init()
+    print("[UAP] -> session.init")
+    response = provider.handle_message(init_msg)
     print(f"[UAP] <- {response['result']['summary']}\n")
 
     print("=" * 50)
@@ -138,18 +141,18 @@ def chat(config_file: str | None = None):
             break
 
         if user_input == "/clear":
-            # Close and re-declare
-            close_msg = build_env_close(env_id, "user_clear")
+            # Close session and re-init
+            close_msg = build_session_close("user_clear")
             provider.handle_message(close_msg)
-            response = provider.handle_message(declare_msg)
+            response = provider.handle_message(init_msg)
             msg_id = 0
             print("\n[Conversation cleared]\n")
             continue
 
-        # env.observe -> env.act
+        # input -> action
         msg_id += 1
-        observe_msg = build_env_observe(env_id, user_input, msg_id)
-        response = provider.handle_message(observe_msg)
+        input_msg = build_input(user_input, msg_id)
+        response = provider.handle_message(input_msg)
 
         if response["status"] == "error":
             print(f"\n[Error] {response['error']['message']}\n")
@@ -171,8 +174,8 @@ def chat(config_file: str | None = None):
                 reply_text = action["params"]["text"]
                 print(f"\nAI: {reply_text}{usage_str}\n")
 
-    # env.close
-    close_msg = build_env_close(env_id, "user_quit")
+    # session.close
+    close_msg = build_session_close("user_quit")
     response = provider.handle_message(close_msg)
     print(f"\n{response['result']['summary']}")
 
@@ -191,16 +194,15 @@ def main():
     if args.message:
         text = " ".join(args.message)
         provider = make_provider(config_file=args.config)
-        env_id = "chat_single"
 
-        provider.handle_message(build_env_declare(env_id))
-        response = provider.handle_message(build_env_observe(env_id, text, 1))
+        provider.handle_message(build_session_init())
+        response = provider.handle_message(build_input(text, 1))
 
         for action in response.get("result", {}).get("actions", []):
             if action["id"] == "reply":
                 print(action["params"]["text"])
 
-        provider.handle_message(build_env_close(env_id, "done"))
+        provider.handle_message(build_session_close("done"))
         return
 
     # Interactive mode

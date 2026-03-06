@@ -2,11 +2,11 @@
 
 ## Project Overview
 
-UAP (Unified AI Protocol) is a full-stack standard protocol for applications to connect to AI models and agents. Core idea: **everything is an environment interaction** — chat, computer use, games, IoT, agents all share the same `env.declare → env.observe → env.act` loop.
+UAP (Unified AI Protocol) is a full-stack standard protocol for applications to connect to AI models and agents. Core idea: **everything is a system interaction** — chat, computer use, games, IoT, agents all share the same `session.init (declare system) → input → action` loop.
 
 ## Key Files
 
-- `SPEC.md` - Protocol specification document (v0.2, RFC-style)
+- `SPEC.md` - Protocol specification document (v0.3, RFC-style)
 - `README.md` - Project introduction
 
 ## Architecture
@@ -14,7 +14,7 @@ UAP (Unified AI Protocol) is a full-stack standard protocol for applications to 
 ```
 Application (Consumer)
     │
-    │  UAP Protocol (env.*)
+    │  UAP Protocol (session/input/action)
     │  (HTTP / WebSocket / stdio / gRPC)
     │
 AI Model / Agent (Provider)
@@ -24,44 +24,49 @@ AI Model / Agent (Provider)
 Tools / Data Sources
 ```
 
-## Core Design: Everything is Environment
+## Core Design: Everything is a System
 
 All interactions follow one pattern:
-1. `env.declare` — describe the environment (or use a template like "chat")
-2. `env.observe` — send inputs (user message, screenshot, board state, sensor data...)
-3. `env.act` — AI returns actions (reply, mouse click, place stone, turn on AC...)
-4. Repeat 2-3 until done
-
-Templates provide shortcuts for common scenarios:
-- `chat` — conversational AI (inputs: message, tool_result; actions: reply, tool_call)
-- `agent` — autonomous tasks (inputs: task_update, file_content; actions: thinking, tool_call, file_write)
-- `computer_use` — desktop automation (inputs: screenshot, ui_tree; actions: mouse_*, keyboard_*)
+1. `session.init` — establish session, declare the system (description + inputs + actions + rules)
+2. `input` — send inputs (user message, screenshot, board state, sensor data...)
+3. `action` — AI returns actions (reply, mouse click, place stone, turn on AC...)
+4. AI can also proactively initiate actions (in stateful mode)
+5. `system.update` — dynamically update system rules/inputs/actions mid-session
+6. Repeat 2-3 until done
 
 ## Core Methods
 
 | Method | Purpose |
 |--------|---------|
-| `session.init` | Initialize session, negotiate capabilities and connection mode |
+| `session.init` | Initialize session, declare system (description, inputs, actions, rules), negotiate capabilities |
 | `session.close` | Close session |
-| `env.declare` | Declare environment (description + example + inputs/actions, or template) |
-| `env.observe` | Send input data to AI |
-| `env.act` | AI returns actions (response to env.observe) |
-| `env.update` | Dynamically update environment declaration |
-| `env.close` | End environment interaction |
+| `input` | Send input data to AI (supports structured + binary) |
+| `action` | AI returns actions (response) or proactively initiates actions |
+| `system.update` | Dynamically update system declaration mid-session |
 | `provider.info` | Query provider info and available models |
 
 ## Connection Modes
 
-- **Stateless**: Each request carries full context. For HTTP/REST.
-- **Stateful**: Provider maintains session state, consumer sends incremental data. For WebSocket/stdio. Provider can push messages.
+- **Stateless**: Each request carries full context (system + history). For HTTP/REST. No AI-initiated actions.
+- **Stateful**: Provider maintains session state, consumer sends incremental data. For WebSocket/stdio. AI can proactively push actions.
 
-## env.declare Three-Layer Design
+## System Declaration (Three-Layer Design)
+
+Declared in `session.init`, the system tells AI about the interaction environment:
 
 | Layer | Field | For whom |
 |-------|-------|----------|
 | Natural language | `description` | AI understands semantics, rules, goals (**required**) |
 | Concrete example | `example` | AI understands data format (**recommended**) |
 | Formal definition | `inputs`/`actions` + `params_schema` | Program validation (**optional**) |
+
+Additional fields: `rules` (behavioral constraints), `constraints` (technical limits), `config` (model, options, tools).
+
+## Key Features
+
+- **Binary input support**: inputs can be `type: "binary"` with `media_type` and `data` (base64) or `ref` (URI)
+- **AI-initiated actions**: In stateful mode, Provider can proactively send actions without waiting for input
+- **System updates**: `system.update` allows adding/removing inputs, actions, rules mid-session
 
 ## Tech Stack
 
@@ -72,8 +77,9 @@ Templates provide shortcuts for common scenarios:
 
 ## Naming Conventions
 
-- Methods use dot notation: `env.declare`, `env.observe`
-- HTTP URLs map dots to slashes: `env.observe` → `POST /uap/v1/env/observe`
-- Custom extensions use `x-` prefix: `x-rag.query`, `x-trading`
-- Python SDK: `client.env.declare()`, `env.observe()`
-- CLI shortcuts: `uap chat "hello"`, `uap agent "analyze data"`
+- Methods use dot notation for namespaced methods: `session.init`, `system.update`
+- Top-level methods: `input`, `action`
+- HTTP URLs map dots to slashes: `system.update` → `POST /uap/v1/system/update`
+- Custom extensions use `x-` prefix: `x-rag.query`
+- Python SDK: `client.session.init()`, `session.input()`
+- CLI: `uap session init`, `uap input`

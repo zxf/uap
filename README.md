@@ -4,18 +4,20 @@ A standardized protocol for applications to connect to AI models and agents.
 
 ## Core Idea
 
-**Everything is an environment interaction.**
+**Everything is a system interaction.**
 
 Whether it's chatting, playing a game, controlling a desktop, or managing IoT devices — the pattern is the same:
 
 ```
-Declare Environment → Send Inputs → AI Returns Actions → Execute → Repeat
+Init Session (Declare System) → Send Inputs → AI Returns Actions → Execute → Repeat
+                                                     ↑
+                                       AI can also act proactively
 ```
 
-UAP unifies this into `env.*` methods. Different scenarios are just different environment declarations:
+UAP declares the system at session init, then exchanges `input` and `action` messages. Different scenarios are just different system declarations:
 
-| Scenario | Environment | Inputs | Actions |
-|----------|------------|--------|---------|
+| Scenario | System | Inputs | Actions |
+|----------|--------|--------|---------|
 | Chat | Conversation | User message | Reply text |
 | Gomoku | 15x15 board | Board state | Place stone, resign |
 | Desktop | macOS screen | Screenshot, UI tree | Mouse, keyboard |
@@ -27,17 +29,22 @@ UAP unifies this into `env.*` methods. Different scenarios are just different en
 ```
 Consumer (App)                    Provider (AI)
      │                                │
-     │──── env.declare ──────────────>│  Describe the environment
-     │<─── { understood, ready } ─────│
+     │──── session.init ─────────────>│  Declare the system
+     │<─── { system_accepted } ───────│
      │                                │
-     │──── env.observe ──────────────>│  Send inputs
-     │<─── env.act { actions } ───────│  AI returns actions
+     │──── input ────────────────────>│  Send inputs
+     │<─── action { actions } ────────│  AI returns actions
      │                                │
-     │──── env.observe ──────────────>│  Send updated inputs
-     │<─── env.act { actions } ───────│
-     │         ...                    │
+     │──── input ────────────────────>│  Send updated inputs
+     │<─── action { actions } ────────│
      │                                │
-     │──── env.close ────────────────>│  End interaction
+     │                                │── action (proactive)
+     │<───────────────────────────────│  AI can act on its own
+     │                                │
+     │──── system.update ────────────>│  Update rules mid-session
+     │<─── ok ────────────────────────│
+     │                                │
+     │──── session.close ────────────>│  End interaction
      │<─── { summary } ──────────────│
 ```
 
@@ -77,11 +84,11 @@ uv run server.py --config openai.yaml   # Chat with OpenAI
 uv run server.py "What is UAP?"         # Single message mode
 ```
 
-**UAP flow:** `env.declare` (conversation environment) → `env.observe` (user message) → `env.act` (reply) → repeat.
+**UAP flow:** `session.init` (declare conversation system) → `input` (user message) → `action` (reply) → repeat.
 
 ### Gomoku (`examples/gomoku/`)
 
-A five-in-a-row game with GUI, showing UAP for a more complex environment.
+A five-in-a-row game with GUI, showing UAP for a more complex system.
 
 ```bash
 cd examples/gomoku
@@ -93,7 +100,7 @@ uv run gui.py                           # GUI with menu to pick players
 
 The GUI auto-discovers provider configs (`*.yaml`) in the directory. Each side (Black/White) can be Human or any AI provider.
 
-**UAP flow:** `env.declare` (board rules, actions) → `env.observe` (board state) → `env.act` (place stone) → repeat.
+**UAP flow:** `session.init` (board rules, actions) → `input` (board state) → `action` (place stone) → repeat.
 
 ### Provider Configuration
 
@@ -125,18 +132,19 @@ Environment variables `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL` also w
 
 ## Specification
 
-See [SPEC.md](./SPEC.md) for the complete protocol specification (v0.2).
+See [SPEC.md](./SPEC.md) for the complete protocol specification (v0.3).
 
 Key methods:
 
 | Method | Purpose |
 |--------|---------|
-| `env.declare` | Describe the environment (description + example + inputs/actions) |
-| `env.observe` | Send input data to AI |
-| `env.act` | AI returns actions |
-| `env.close` | End the interaction |
+| `session.init` | Declare the system (description + inputs + actions + rules) and init session |
+| `input` | Send input data to AI (structured + binary) |
+| `action` | AI returns actions or proactively initiates actions |
+| `system.update` | Update system rules/inputs/actions mid-session |
+| `session.close` | End the interaction |
 
-### env.declare Three-Layer Design
+### System Declaration (Three-Layer Design)
 
 | Layer | Field | Purpose |
 |-------|-------|---------|

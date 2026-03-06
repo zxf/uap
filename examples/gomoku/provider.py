@@ -5,7 +5,7 @@ A mock UAP Provider that plays gomoku with configurable strategy.
 
 In a real implementation, this would be replaced by an HTTP/WebSocket/stdio
 connection to an actual AI service (OpenAI, Anthropic, etc.).
-The Provider receives env.declare/env.observe messages and returns env.act responses.
+The Provider receives session.init/input messages and returns action responses.
 """
 
 import random
@@ -19,33 +19,33 @@ class MockAIProvider:
     Mock UAP Provider for gomoku.
 
     Implements the Provider side of the UAP protocol:
-    - env.declare -> understand environment, return confirmation
-    - env.observe -> analyze inputs, return actions (env.act)
-    - env.close   -> return summary
+    - session.init -> understand system declaration, return confirmation
+    - input        -> analyze data, return actions (action)
+    - session.close -> return summary
     """
 
     def __init__(self, name: str = "AI", style: str = "balanced"):
         self.name = name
         self.style = style  # "aggressive", "defensive", "balanced"
-        self.env_declaration = None
+        self.system_declaration = None
         self.my_color = None
         self.my_stone = None
         self.opp_stone = None
 
     def handle_message(self, message: dict) -> dict:
         method = message.get("method")
-        if method == "env.declare":
-            return self._handle_declare(message)
-        elif method == "env.observe":
-            return self._handle_observe(message)
-        elif method == "env.close":
+        if method == "session.init":
+            return self._handle_session_init(message)
+        elif method == "input":
+            return self._handle_input(message)
+        elif method == "session.close":
             return self._handle_close(message)
         else:
             return self._error(message, "not_found", f"Unknown method: {method}")
 
-    def _handle_declare(self, message: dict) -> dict:
-        self.env_declaration = message["params"]
-        desc = self.env_declaration["description"]
+    def _handle_session_init(self, message: dict) -> dict:
+        self.system_declaration = message["params"]["system"]
+        desc = self.system_declaration["description"]
 
         if "BLACK" in desc or "black" in desc.split("play as")[-1][:10]:
             self.my_color = "black"
@@ -57,24 +57,25 @@ class MockAIProvider:
             self.opp_stone = BLACK
 
         return {
-            "uap": "0.2",
+            "uap": "0.3",
             "id": message["id"],
             "status": "ok",
             "result": {
-                "env_id": self.env_declaration["env_id"],
-                "understood": True,
-                "summary": (
-                    f"I'm {self.name}, playing as {self.my_color.upper()}. "
-                    f"Strategy: {self.style}. "
-                    f"Available actions: place_stone(x, y) and resign."
-                ),
-                "ready": True,
+                "system_accepted": {
+                    "understood": True,
+                    "summary": (
+                        f"I'm {self.name}, playing as {self.my_color.upper()}. "
+                        f"Strategy: {self.style}. "
+                        f"Available actions: place_stone(x, y) and resign."
+                    ),
+                    "ready": True,
+                },
                 "initial_input_request": ["board_state"],
             },
         }
 
-    def _handle_observe(self, message: dict) -> dict:
-        board_state = message["params"]["inputs"]["board_state"]
+    def _handle_input(self, message: dict) -> dict:
+        board_state = message["params"]["data"]["board_state"]
         board = board_state["board"]
         current_turn = board_state["current_turn"]
 
@@ -106,11 +107,10 @@ class MockAIProvider:
             summary = f"[{self.name}] Game ended."
 
         return {
-            "uap": "0.2",
+            "uap": "0.3",
             "id": message["id"],
             "status": "ok",
             "result": {
-                "env_id": message["params"]["env_id"],
                 "summary": summary,
                 "stats": {},
             },
@@ -120,7 +120,6 @@ class MockAIProvider:
 
     def _act(self, message: dict, actions: list, status: str, thinking: str = "") -> dict:
         result = {
-            "env_id": message["params"]["env_id"],
             "actions": actions,
             "status": status,
             "next_input_request": ["board_state"],
@@ -128,7 +127,7 @@ class MockAIProvider:
         if thinking:
             result["thinking"] = thinking
         return {
-            "uap": "0.2",
+            "uap": "0.3",
             "id": message["id"],
             "status": "ok",
             "result": result,
@@ -137,7 +136,7 @@ class MockAIProvider:
 
     def _error(self, message: dict, code: str, msg: str) -> dict:
         return {
-            "uap": "0.2",
+            "uap": "0.3",
             "id": message.get("id"),
             "status": "error",
             "error": {"code": code, "message": msg},

@@ -25,46 +25,45 @@ class MockChatProvider:
     Mock UAP Provider for chat.
 
     Implements the Provider side of the UAP protocol:
-    - env.declare -> understand environment, return confirmation
-    - env.observe -> receive user message, return reply (env.act)
-    - env.close   -> return summary
+    - session.init  -> accept system declaration, return confirmation
+    - input         -> receive user message, return action (reply)
+    - session.close -> return summary
     """
 
     def __init__(self, name: str = "MockChat"):
         self.name = name
-        self.env_declaration = None
+        self.system_declaration = None
         self.message_count = 0
 
     def handle_message(self, message: dict) -> dict:
         method = message.get("method")
-        if method == "env.declare":
-            return self._handle_declare(message)
-        elif method == "env.observe":
-            return self._handle_observe(message)
-        elif method == "env.close":
+        if method == "session.init":
+            return self._handle_init(message)
+        elif method == "input":
+            return self._handle_input(message)
+        elif method == "session.close":
             return self._handle_close(message)
         else:
             return self._error(message, "not_found", f"Unknown method: {method}")
 
-    def _handle_declare(self, message: dict) -> dict:
-        self.env_declaration = message["params"]
+    def _handle_init(self, message: dict) -> dict:
+        self.system_declaration = message["params"].get("system", {})
         self.message_count = 0
         return {
-            "uap": "0.2",
+            "uap": "0.3",
             "id": message["id"],
             "status": "ok",
             "result": {
-                "env_id": self.env_declaration["env_id"],
-                "understood": True,
+                "system_accepted": True,
                 "summary": f"I'm {self.name}, a mock chat provider. Ready to chat!",
                 "ready": True,
                 "initial_input_request": ["message"],
             },
         }
 
-    def _handle_observe(self, message: dict) -> dict:
-        inputs = message["params"]["inputs"]
-        user_msg = inputs.get("message", {})
+    def _handle_input(self, message: dict) -> dict:
+        data = message["params"]["data"]
+        user_msg = data.get("message", {})
         text = user_msg.get("text", "")
         self.message_count += 1
 
@@ -79,11 +78,10 @@ class MockChatProvider:
             reply = random.choice(RESPONSES)
 
         return {
-            "uap": "0.2",
+            "uap": "0.3",
             "id": message["id"],
             "status": "ok",
             "result": {
-                "env_id": message["params"]["env_id"],
                 "thinking": f"Processing message #{self.message_count}",
                 "actions": [
                     {"id": "reply", "params": {"text": reply}},
@@ -96,11 +94,10 @@ class MockChatProvider:
 
     def _handle_close(self, message: dict) -> dict:
         return {
-            "uap": "0.2",
+            "uap": "0.3",
             "id": message["id"],
             "status": "ok",
             "result": {
-                "env_id": message["params"]["env_id"],
                 "summary": f"[{self.name}] Chat ended. {self.message_count} messages exchanged.",
                 "stats": {"messages": self.message_count},
             },
@@ -108,7 +105,7 @@ class MockChatProvider:
 
     def _error(self, message: dict, code: str, msg: str) -> dict:
         return {
-            "uap": "0.2",
+            "uap": "0.3",
             "id": message.get("id"),
             "status": "error",
             "error": {"code": code, "message": msg},

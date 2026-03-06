@@ -2,7 +2,7 @@
 UAP Gomoku Example - Local Model Provider
 
 A UAP Provider that loads a GGUF model locally via llama-cpp-python.
-No server needed — runs inference directly in-process.
+No server needed -- runs inference directly in-process.
 
 Requires: pip install llama-cpp-python
 
@@ -22,14 +22,14 @@ class LocalGomokuProvider:
     """
     UAP Provider backed by a local GGUF model via llama-cpp-python.
 
-    Receives UAP messages (env.declare, env.observe, env.close)
+    Receives UAP messages (session.init, input, session.close)
     and runs inference locally. Translates responses to gomoku actions.
     """
 
     def __init__(self, name: str = "Local", config=None):
         self.name = name
         self.config = config
-        self.env_declaration = None
+        self.system_declaration = None
         self.conversation_history: list[dict] = []
 
         from llama_cpp import Llama
@@ -44,17 +44,17 @@ class LocalGomokuProvider:
 
     def handle_message(self, message: dict) -> dict:
         method = message.get("method")
-        if method == "env.declare":
-            return self._handle_declare(message)
-        elif method == "env.observe":
-            return self._handle_observe(message)
-        elif method == "env.close":
+        if method == "session.init":
+            return self._handle_session_init(message)
+        elif method == "input":
+            return self._handle_input(message)
+        elif method == "session.close":
             return self._handle_close(message)
         else:
             return self._error(message, "not_found", f"Unknown method: {method}")
 
-    def _handle_declare(self, message: dict) -> dict:
-        self.env_declaration = message["params"]
+    def _handle_session_init(self, message: dict) -> dict:
+        self.system_declaration = message["params"]["system"]
         self.conversation_history = []
 
         system_prompt = self._build_system_prompt()
@@ -62,20 +62,21 @@ class LocalGomokuProvider:
 
         model_name = Path(self.config.model_path).stem
         return {
-            "uap": "0.2",
+            "uap": "0.3",
             "id": message["id"],
             "status": "ok",
             "result": {
-                "env_id": self.env_declaration["env_id"],
-                "understood": True,
-                "summary": f"I'm {self.name} (local: {model_name}). Ready to play.",
-                "ready": True,
+                "system_accepted": {
+                    "understood": True,
+                    "summary": f"I'm {self.name} (local: {model_name}). Ready to play.",
+                    "ready": True,
+                },
                 "initial_input_request": ["board_state"],
             },
         }
 
-    def _handle_observe(self, message: dict) -> dict:
-        board_state = message["params"]["inputs"]["board_state"]
+    def _handle_input(self, message: dict) -> dict:
+        board_state = message["params"]["data"]["board_state"]
         user_message = message["params"].get("message", "")
 
         content = self._format_board_message(board_state, user_message)
@@ -96,11 +97,10 @@ class LocalGomokuProvider:
             usage = response.get("usage", {})
 
             return {
-                "uap": "0.2",
+                "uap": "0.3",
                 "id": message["id"],
                 "status": "ok",
                 "result": {
-                    "env_id": message["params"]["env_id"],
                     "thinking": thinking,
                     "actions": actions,
                     "status": "continue",
@@ -118,11 +118,10 @@ class LocalGomokuProvider:
     def _handle_close(self, message: dict) -> dict:
         self.conversation_history = []
         return {
-            "uap": "0.2",
+            "uap": "0.3",
             "id": message["id"],
             "status": "ok",
             "result": {
-                "env_id": message["params"]["env_id"],
                 "summary": f"[{self.name}] Good game!",
                 "stats": {},
             },
@@ -131,7 +130,7 @@ class LocalGomokuProvider:
     # --- Prompt Engineering ---
 
     def _build_system_prompt(self) -> str:
-        decl = self.env_declaration
+        decl = self.system_declaration
         description = decl.get("description", "")
         example = decl.get("example", {})
 
@@ -211,7 +210,7 @@ class LocalGomokuProvider:
 
     def _error(self, message: dict, code: str, msg: str) -> dict:
         return {
-            "uap": "0.2",
+            "uap": "0.3",
             "id": message.get("id"),
             "status": "error",
             "error": {"code": code, "message": msg},

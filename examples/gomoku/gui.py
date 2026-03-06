@@ -12,11 +12,13 @@ Create provider configs like openai.yaml, deepseek.yaml, etc.
 See provider.example.yaml for all available options.
 """
 
+import os
 import sys
 import threading
 import time
 from pathlib import Path
 
+os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
 import pygame
 
 from provider import MockAIProvider
@@ -106,47 +108,52 @@ class GomokuGame:
 
 # --- UAP Message Builders ---
 
-def build_env_declare(env_id: str, ai_color: str) -> dict:
+def build_session_init(ai_color: str) -> dict:
     return {
-        "uap": "0.2",
-        "id": "req_declare",
-        "method": "env.declare",
+        "uap": "0.3",
+        "id": "req_init",
+        "method": "session.init",
         "params": {
-            "env_id": env_id,
-            "name": "Gomoku",
-            "description": (
-                f"15x15 standard gomoku. You play as {ai_color.upper()} "
-                f"({'1' if ai_color == 'black' else '2'}). "
-                "Board: 0=empty, 1=black, 2=white. "
-                "Coordinates: top-left (0,0), x=column, y=row. "
-                "5 in a row wins. Only empty positions. Alternate turns."
-            ),
-            "example": {
-                "inputs": {
-                    "board_state": {
-                        "board": [[0]*15 for _ in range(5)],
-                        "current_turn": ai_color,
-                        "move_history": [{"x": 7, "y": 7, "color": "black"}],
-                        "game_status": "playing",
-                    }
-                },
-                "actions": [{"id": "place_stone", "params": {"x": 7, "y": 8}}],
+            "client": {
+                "name": "gomoku-gui",
+                "version": "0.1.0",
             },
-            "inputs": [{"id": "board_state", "type": "structured", "description": "Board state"}],
-            "actions": [
-                {"id": "place_stone", "description": "Place stone at (x,y)"},
-                {"id": "resign", "description": "Resign"},
-            ],
+            "system": {
+                "name": "Gomoku",
+                "description": (
+                    f"15x15 standard gomoku. You play as {ai_color.upper()} "
+                    f"({'1' if ai_color == 'black' else '2'}). "
+                    "Board: 0=empty, 1=black, 2=white. "
+                    "Coordinates: top-left (0,0), x=column, y=row. "
+                    "5 in a row wins. Only empty positions. Alternate turns."
+                ),
+                "example": {
+                    "inputs": {
+                        "board_state": {
+                            "board": [[0]*15 for _ in range(5)],
+                            "current_turn": ai_color,
+                            "move_history": [{"x": 7, "y": 7, "color": "black"}],
+                            "game_status": "playing",
+                        }
+                    },
+                    "actions": [{"id": "place_stone", "params": {"x": 7, "y": 8}}],
+                },
+                "inputs": [{"id": "board_state", "type": "structured", "description": "Board state"}],
+                "actions": [
+                    {"id": "place_stone", "description": "Place stone at (x,y)"},
+                    {"id": "resign", "description": "Resign"},
+                ],
+            },
         },
     }
 
 
-def build_env_observe(env_id: str, game: GomokuGame, message: str = "") -> dict:
+def build_input(game: GomokuGame, message: str = "") -> dict:
     msg = {
-        "uap": "0.2",
+        "uap": "0.3",
         "id": f"req_{len(game.move_history):03d}",
-        "method": "env.observe",
-        "params": {"env_id": env_id, "inputs": {"board_state": game.to_state()}},
+        "method": "input",
+        "params": {"data": {"board_state": game.to_state()}},
     }
     if message:
         msg["params"]["message"] = message
@@ -351,26 +358,25 @@ class GomokuGUI:
 
         if not black["is_human"]:
             self.players["black"] = make_provider("Black", black["config_file"])
-            self._declare_env("gomoku_b", self.players["black"], "black")
+            self._init_session(self.players["black"], "black")
 
         if not white["is_human"]:
             self.players["white"] = make_provider("White", white["config_file"])
-            self._declare_env("gomoku_w", self.players["white"], "white")
+            self._init_session(self.players["white"], "white")
 
         self.status_text = f"Black(X): {black['name']}  |  White(O): {white['name']}"
 
     def _is_human(self, color: str) -> bool:
         return self.players[color] is None
 
-    def _declare_env(self, env_id: str, provider, color: str):
-        msg = build_env_declare(env_id, color)
+    def _init_session(self, provider, color: str):
+        msg = build_session_init(color)
         provider.handle_message(msg)
 
     def _ai_move(self, color: str) -> dict | None:
         provider = self.players[color]
-        env_id = "gomoku_b" if color == "black" else "gomoku_w"
-        observe_msg = build_env_observe(env_id, self.game)
-        response = provider.handle_message(observe_msg)
+        input_msg = build_input(self.game)
+        response = provider.handle_message(input_msg)
         result = response.get("result", {})
 
         self.thinking_text = result.get("thinking", "")
@@ -555,6 +561,12 @@ class GomokuGUI:
 # --- Main Loop ---
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="UAP Gomoku GUI - graphical gomoku with pluggable AI providers")
+    parser.add_argument("--delay", type=float, default=0.5,
+                        help="Delay between AI moves in AI-vs-AI mode (seconds)")
+    parser.parse_args()
+
     pygame.init()
     screen = pygame.display.set_mode((MENU_W, MENU_H))
     pygame.display.set_caption("UAP Gomoku")

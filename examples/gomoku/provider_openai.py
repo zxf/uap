@@ -2,7 +2,8 @@
 UAP Gomoku Example - OpenAI Provider
 
 A real UAP Provider that uses OpenAI API (or any compatible API)
-to play gomoku. Translates UAP env.* messages into OpenAI chat completions.
+to play gomoku. Translates UAP session.init/input messages into
+OpenAI chat completions.
 
 Supports any OpenAI-compatible endpoint (OpenAI, DeepSeek, local models, etc.)
 via config or environment variables.
@@ -104,14 +105,14 @@ class OpenAIProvider:
     """
     UAP Provider backed by OpenAI-compatible API.
 
-    Receives UAP messages (env.declare, env.observe, env.close)
+    Receives UAP messages (session.init, input, session.close)
     and translates them into OpenAI chat completion calls.
     """
 
     def __init__(self, name: str = "AI", config: ProviderConfig | None = None, **kwargs):
         self.name = name
         self.config = config or ProviderConfig.load(overrides=kwargs)
-        self.env_declaration = None
+        self.system_declaration = None
         self.conversation_history: list[dict] = []
 
         self.client = OpenAI(
@@ -121,37 +122,38 @@ class OpenAIProvider:
 
     def handle_message(self, message: dict) -> dict:
         method = message.get("method")
-        if method == "env.declare":
-            return self._handle_declare(message)
-        elif method == "env.observe":
-            return self._handle_observe(message)
-        elif method == "env.close":
+        if method == "session.init":
+            return self._handle_session_init(message)
+        elif method == "input":
+            return self._handle_input(message)
+        elif method == "session.close":
             return self._handle_close(message)
         else:
             return self._error(message, "not_found", f"Unknown method: {method}")
 
-    def _handle_declare(self, message: dict) -> dict:
-        self.env_declaration = message["params"]
+    def _handle_session_init(self, message: dict) -> dict:
+        self.system_declaration = message["params"]["system"]
         self.conversation_history = []
 
         system_prompt = self._build_system_prompt()
         self.conversation_history.append({"role": "system", "content": system_prompt})
 
         return {
-            "uap": "0.2",
+            "uap": "0.3",
             "id": message["id"],
             "status": "ok",
             "result": {
-                "env_id": self.env_declaration["env_id"],
-                "understood": True,
-                "summary": f"I'm {self.name} (model: {self.config.model}). Ready to play.",
-                "ready": True,
+                "system_accepted": {
+                    "understood": True,
+                    "summary": f"I'm {self.name} (model: {self.config.model}). Ready to play.",
+                    "ready": True,
+                },
                 "initial_input_request": ["board_state"],
             },
         }
 
-    def _handle_observe(self, message: dict) -> dict:
-        board_state = message["params"]["inputs"]["board_state"]
+    def _handle_input(self, message: dict) -> dict:
+        board_state = message["params"]["data"]["board_state"]
         user_message = message["params"].get("message", "")
 
         content = self._format_board_message(board_state, user_message)
@@ -184,11 +186,10 @@ class OpenAIProvider:
                 }
 
             return {
-                "uap": "0.2",
+                "uap": "0.3",
                 "id": message["id"],
                 "status": "ok",
                 "result": {
-                    "env_id": message["params"]["env_id"],
                     "thinking": thinking,
                     "actions": actions,
                     "status": "continue",
@@ -203,11 +204,10 @@ class OpenAIProvider:
     def _handle_close(self, message: dict) -> dict:
         self.conversation_history = []
         return {
-            "uap": "0.2",
+            "uap": "0.3",
             "id": message["id"],
             "status": "ok",
             "result": {
-                "env_id": message["params"]["env_id"],
                 "summary": f"[{self.name}] Good game!",
                 "stats": {},
             },
@@ -216,7 +216,7 @@ class OpenAIProvider:
     # --- Prompt Engineering ---
 
     def _build_system_prompt(self) -> str:
-        decl = self.env_declaration
+        decl = self.system_declaration
         description = decl.get("description", "")
         example = decl.get("example", {})
 
@@ -226,7 +226,7 @@ class OpenAIProvider:
         if self.config.system_prompt_prefix:
             parts.append(self.config.system_prompt_prefix)
 
-        # Environment description
+        # System description
         parts.append(f"You are playing a gomoku game. Here are the rules and environment:\n\n{description}")
 
         # Available actions
@@ -333,7 +333,7 @@ class OpenAIProvider:
 
     def _error(self, message: dict, code: str, msg: str) -> dict:
         return {
-            "uap": "0.2",
+            "uap": "0.3",
             "id": message.get("id"),
             "status": "error",
             "error": {"code": code, "message": msg},
